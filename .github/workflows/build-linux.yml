@@ -2,7 +2,7 @@ name: Linux Build
 
 on:
   push:
-    branches: [ develop, main ]
+    branches: [ dev, main ]
   workflow_dispatch:
 
 # Serialize builds on the same branch. New pushes (e.g. from

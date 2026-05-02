@@ -48,8 +48,10 @@ cat mirbeer_turn.cpp        # наш модуль (HTTP клиент + кэш TU
 cat mirbeer_turn.h          # заголовочный файл
 
 # 3. Клонируем оригинальный Telegram Desktop
+#    (версия берётся из файла .upstream-tag — она синхронизируется с
+#    последним релизом tdesktop автоматически)
 git clone --depth=1 --recursive \
-  --branch v6.7.6 \
+  --branch "$(cat .upstream-tag)" \
   https://github.com/telegramdesktop/tdesktop.git
 
 # 4. Применяем патч
@@ -82,7 +84,8 @@ cp ../mirbeer_turn.h Telegram/SourceFiles/calls/
 
 Хотите помочь проекту и поднять собственный TURN-сервер? Смотрите мануал:
 
-👉 [coturn-deploy-manual.md](docs/coturn-deploy-manual.md)
+👉 [coturn-deploy-manual.md](coturn-deploy-manual.md) — пошаговая инструкция по развёртыванию
+👉 [turn-network-registration.md](turn-network-registration.md) — как зарегистрировать сервер в сети
 
 После развёртывания вы можете зарегистрировать сервер в нашей сети — тогда все пользователи Rustogram смогут им пользоваться.
 
@@ -143,8 +146,10 @@ cat mirbeer_turn.cpp        # our module (HTTP client + TURN server cache)
 cat mirbeer_turn.h          # header file
 
 # 3. Clone original Telegram Desktop
+#    (the version is read from the .upstream-tag file — it is kept
+#    in sync with the latest tdesktop release automatically)
 git clone --depth=1 --recursive \
-  --branch v6.7.6 \
+  --branch "$(cat .upstream-tag)" \
   https://github.com/telegramdesktop/tdesktop.git
 
 # 4. Apply the patch
@@ -177,7 +182,8 @@ And added **2 new files**:
 
 Want to help the project by running your own TURN server? See the manual:
 
-👉 [coturn-deploy-manual.md](docs/coturn-deploy-manual.md)
+👉 [coturn-deploy-manual.md](coturn-deploy-manual.md) — step-by-step deployment guide
+👉 [turn-network-registration.md](turn-network-registration.md) — how to register your server in the network
 
 After deployment you can register your server in our network — then all Rustogram users will be able to use it.
 
