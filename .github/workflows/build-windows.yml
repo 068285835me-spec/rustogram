@@ -33,14 +33,15 @@ jobs:
       # lang_auto.cpp (~18k lines, all UI strings of all languages)
       # peaks above 16 GB RAM and dies with C1060 unless backed by
       # a large page file. windows-latest defaults to ~16 GB managed
-      # page file; we bump it to 16-32 GB so a single cl.exe process
-      # can spill to swap instead of dying.
+      # page file. We bump it to 16-32 GB on D: (the temp drive,
+      # ~50 GB free) — putting it on C: previously starved the Qt
+      # build of disk space and broke it with "Cannot write PCH file".
       - name: Increase paging file (avoid C1060 on lang_auto.cpp)
         uses: al-cheb/configure-pagefile-action@v1.4
         with:
           minimum-size: 16GB
           maximum-size: 32GB
-          disk-root: "C:"
+          disk-root: "D:"
 
       - name: Checkout MirBeer changes
         uses: actions/checkout@v4
