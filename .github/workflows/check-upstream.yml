@@ -1,0 +1,65 @@
+name: Check upstream tdesktop
+
+# Watches telegramdesktop/tdesktop for new releases.
+# When a new tag is published, bumps .upstream-tag and pushes the
+# change — which automatically triggers build-linux and build-windows
+# workflows on the new commit.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours
+  workflow_dispatch:
+
+# Only one upstream-check at a time. Skip new runs if one is already
+# in progress — there is no value in checking twice in parallel.
+concurrency:
+  group: check-upstream
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Compare upstream release with .upstream-tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get latest upstream release
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST=$(gh release view \
+            --repo telegramdesktop/tdesktop \
+            --json tagName --jq .tagName)
+          echo "tag=$LATEST" >> $GITHUB_OUTPUT
+          echo "Upstream latest: $LATEST"
+
+      - name: Read currently-built tag
+        id: current
+        run: |
+          CURRENT=$(cat .upstream-tag)
+          echo "tag=$CURRENT" >> $GITHUB_OUTPUT
+          echo "Currently built: $CURRENT"
+
+      - name: Bump .upstream-tag
+        if: steps.upstream.outputs.tag != steps.current.outputs.tag
+        run: |
+          echo "Bumping ${{ steps.current.outputs.tag }} → ${{ steps.upstream.outputs.tag }}"
+
+          echo "${{ steps.upstream.outputs.tag }}" > .upstream-tag
+
+          git config user.name  "rustogram-bot"
+          git config user.email "bot@rustogram.local"
+          git add .upstream-tag
+          git commit -m "chore: bump tdesktop → ${{ steps.upstream.outputs.tag }}"
+          git push
+
+      - name: Already up to date
+        if: steps.upstream.outputs.tag == steps.current.outputs.tag
+        run: echo "Already on ${{ steps.current.outputs.tag }} — nothing to do."

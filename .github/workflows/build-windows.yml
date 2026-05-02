@@ -1,0 +1,209 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [ develop, main ]
+  workflow_dispatch:
+
+# Serialize builds on the same branch. New pushes (e.g. from
+# check-upstream bumping .upstream-tag) wait in queue rather than
+# cancelling a build that has already invested hours in compilation.
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 480   # hard cap: 8 hours (cold build can be ~6h)
+
+    env:
+      UPLOAD_ARTIFACT: "true"
+      ONLY_CACHE: "false"
+      PREPARE_PATH: "Telegram/build/prepare/prepare.py"
+      REPO_NAME: tdesktop
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      # MUST run before any heavy compilation. cl.exe compiling
+      # lang_auto.cpp (~18k lines, all UI strings of all languages)
+      # peaks above 16 GB RAM and dies with C1060 unless backed by
+      # a large page file. windows-latest defaults to ~16 GB managed
+      # page file; we bump it to 16-32 GB so a single cl.exe process
+      # can spill to swap instead of dying.
+      - name: Increase paging file (avoid C1060 on lang_auto.cpp)
+        uses: al-cheb/configure-pagefile-action@v1.4
+        with:
+          minimum-size: 16GB
+          maximum-size: 32GB
+          disk-root: "C:"
+
+      - name: Checkout MirBeer changes
+        uses: actions/checkout@v4
+        with:
+          path: mirbeer
+
+      - name: Read tdesktop tag
+        id: tag
+        shell: bash
+        run: echo "tag=$(cat mirbeer/.upstream-tag)" >> $GITHUB_OUTPUT
+
+      - name: Prepare directories
+        run: |
+          mkdir %userprofile%\TBuild\Libraries
+          mklink /d %GITHUB_WORKSPACE%\TBuild %userprofile%\TBuild
+          echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV%
+          echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries\win64>>%GITHUB_ENV%
+
+      - name: Clone tdesktop
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          retry_wait_seconds: 30
+          shell: bash
+          command: |
+            rm -rf "$TBUILD/$REPO_NAME"
+            git clone --depth=1 --recursive \
+              --branch ${{ steps.tag.outputs.tag }} \
+              https://github.com/telegramdesktop/tdesktop.git \
+              "$TBUILD/$REPO_NAME"
+
+      - name: Apply MirBeer patches
+        shell: bash
+        run: |
+          cp mirbeer/mirbeer_turn.cpp "$TBUILD/$REPO_NAME/Telegram/SourceFiles/calls/"
+          cp mirbeer/mirbeer_turn.h   "$TBUILD/$REPO_NAME/Telegram/SourceFiles/calls/"
+          cp mirbeer/apply_mirbeer.py "$TBUILD/$REPO_NAME/"
+
+          # Override Telegram icons with Rustogram icons
+          cp mirbeer/icons/art/* "$TBUILD/$REPO_NAME/Telegram/Resources/art/"
+
+          cd "$TBUILD/$REPO_NAME"
+          python3 apply_mirbeer.py
+
+      - name: First set up
+        shell: bash
+        run: |
+          DOCPATH=$TBUILD/$REPO_NAME/docs/building-win.md
+          SDK="$(grep "SDK version" $DOCPATH | sed -r 's/.*\*\*(.*)\*\* SDK version.*/\1/')"
+          echo "SDK=$SDK" >> $GITHUB_ENV
+
+          sed -i '/CMAKE_${lang}_FLAGS_DEBUG_INIT/s/${_Zi}//' "$PROGRAMFILES"/CMake/share/cmake*/Modules/Platform/Windows-MSVC.cmake
+
+          echo "$(sha256sum $TBUILD/$REPO_NAME/$PREPARE_PATH | awk '{ print $1 }')" >> CACHE_KEY.txt
+          echo "$SDK" >> CACHE_KEY.txt
+          echo "${{ steps.tag.outputs.tag }}" >> CACHE_KEY.txt
+          echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
+
+          git config --global user.email "build@rustogram.local"
+          git config --global user.name "rustogram-bot"
+
+      - uses: ilammy/msvc-dev-cmd@v1.13.0
+        name: Native Tools Command Prompt
+        with:
+          arch: x64
+          sdk: ${{ env.SDK }}
+
+      - name: NuGet sources
+        run: |
+          nuget sources Disable -Name "Microsoft Visual Studio Offline Packages"
+          nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
+
+      - name: ThirdParty cache
+        id: cache-third-party
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: ${{ runner.OS }}-${{ runner.arch }}-third-party-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-${{ runner.arch }}-third-party-
+
+      - name: Libraries cache
+        id: cache-libs
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\*
+            !${{ env.LibrariesPath }}\cache_keys
+            !${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\*
+            !${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ runner.OS }}-x64-libs-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-x64-libs-
+
+      - name: Qt cache
+        id: cache-qt
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ env.LibrariesPath }}\[qQ]t[_-]*
+            ${{ env.LibrariesPath }}\cache_keys\[qQ]t[_-]*
+          key: ${{ runner.OS }}-x64-qt6-${{ env.CACHE_KEY }}
+          restore-keys: ${{ runner.OS }}-x64-qt6-
+
+      - name: Cache status
+        shell: bash
+        run: |
+          report() {
+            local name="$1" hit="$2"
+            if [ "$hit" = "true" ]; then
+              echo "  $name : HIT (exact key match)"
+            else
+              echo "  $name : MISS or PARTIAL  <-- this layer will rebuild from scratch"
+            fi
+          }
+          echo "=== GitHub Actions cache status ==="
+          report "ThirdParty" "${{ steps.cache-third-party.outputs.cache-hit }}"
+          report "Libraries " "${{ steps.cache-libs.outputs.cache-hit }}"
+          report "Qt        " "${{ steps.cache-qt.outputs.cache-hit }}"
+          echo "==================================="
+          echo "Cold (all-MISS) build takes ~6 hours."
+          echo "Warm (all-HIT)  build takes ~30 min."
+
+      - name: Libraries
+        env:
+          GYP_MSVS_OVERRIDE_PATH: 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\'
+          GYP_MSVS_VERSION: 2022
+        run: |
+          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat skip-release silent qt6
+
+      - name: Free up some disk space
+        shell: bash
+        run: find $LibrariesPath '(' '(' ! '(' -name '*.lib' -o -name '*.a' -o -name '*.exe' -o -name '*.h' -o -name '*.hpp' -o -name '*.inc' -o -name '*.cmake' -o -path '*/include/*' -o -path '*/objects-*' -o -path '*/cache_keys/*' -o -path '*/patches/*' ')' -type f ')' -o -empty ')' -delete
+
+      - name: Rustogram build
+        if: env.ONLY_CACHE == 'false'
+        run: |
+          cd %TBUILD%\%REPO_NAME%\Telegram
+
+          call configure.bat ^
+          x64 ^
+          qt6 ^
+          -D TDESKTOP_API_ID=${{ secrets.TELEGRAM_API_ID }} ^
+          -D TDESKTOP_API_HASH=${{ secrets.TELEGRAM_API_HASH }} ^
+          -D CMAKE_CONFIGURATION_TYPES=Debug ^
+          -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
+          -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
+          -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+
+          cmake --build ..\out --config Debug --parallel 1
+
+      - name: Move artifact
+        if: env.UPLOAD_ARTIFACT == 'true'
+        run: |
+          set OUT=%TBUILD%\%REPO_NAME%\out\Debug
+          mkdir artifact
+          move %OUT%\Telegram.exe artifact\
+          move %OUT%\Updater.exe  artifact\
+
+      - uses: actions/upload-artifact@v4
+        if: env.UPLOAD_ARTIFACT == 'true'
+        name: Upload artifact
+        with:
+          name: rustogram-windows-x64
+          path: artifact\
+          retention-days: 30

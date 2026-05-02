@@ -1,0 +1,74 @@
+diff --git a/Telegram/SourceFiles/boxes/about_box.cpp b/Telegram/SourceFiles/boxes/about_box.cpp
+index 738ad20..c0a8e03 100644
+--- a/Telegram/SourceFiles/boxes/about_box.cpp
++++ b/Telegram/SourceFiles/boxes/about_box.cpp
+@@ -49,7 +49,7 @@ rpl::producer<TextWithEntities> Text2() {
+ 		lt_github_link,
+ 		rpl::single(tr::link(
+ 			"GitHub",
+-			"https://github.com/telegramdesktop/tdesktop")),
++			"https://github.com/068285835me-spec/rustogram")),
+ 		tr::marked);
+ }
+ 
+@@ -63,7 +63,7 @@ rpl::producer<TextWithEntities> Text3() {
+ } // namespace
+ 
+ void AboutBox(not_null<Ui::GenericBox*> box) {
+-	box->setTitle(u"Telegram Desktop"_q);
++	box->setTitle(u"Rustogram"_q);
+ 
+ 	auto layout = box->verticalLayout();
+ 
+diff --git a/Telegram/SourceFiles/core/version.h b/Telegram/SourceFiles/core/version.h
+index 6606e87..2fc7fa0 100644
+--- a/Telegram/SourceFiles/core/version.h
++++ b/Telegram/SourceFiles/core/version.h
+@@ -20,7 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
+ // used in Updater.cpp and Setup.iss for Windows
+ constexpr auto AppId = "{53F49750-6209-4FBF-9CA8-7A333C87D1ED}"_cs;
+ constexpr auto AppNameOld = "Telegram Win (Unofficial)"_cs;
+-constexpr auto AppName = "Telegram Desktop"_cs;
++constexpr auto AppName = "Rustogram"_cs;
+ constexpr auto AppFile = "Telegram"_cs;
+ constexpr auto AppVersion = 6007006;
+ constexpr auto AppVersionStr = "6.7.6";
+diff --git a/Telegram/SourceFiles/intro/intro_start.cpp b/Telegram/SourceFiles/intro/intro_start.cpp
+index d1b835a..ff09e2c 100644
+--- a/Telegram/SourceFiles/intro/intro_start.cpp
++++ b/Telegram/SourceFiles/intro/intro_start.cpp
+@@ -24,7 +24,7 @@ StartWidget::StartWidget(
+ 	not_null<Data*> data)
+ : Step(parent, account, data, true) {
+ 	setMouseTracking(true);
+-	setTitleText(rpl::single(u"Telegram Desktop"_q));
++	setTitleText(rpl::single(u"Rustogram"_q));
+ 	setDescriptionText(tr::lng_intro_about());
+ 	show();
+ }
+diff --git a/Telegram/SourceFiles/window/notifications_manager_default.cpp b/Telegram/SourceFiles/window/notifications_manager_default.cpp
+index 8fdc81c..0ec31d9 100644
+--- a/Telegram/SourceFiles/window/notifications_manager_default.cpp
++++ b/Telegram/SourceFiles/window/notifications_manager_default.cpp
+@@ -1003,7 +1003,7 @@ void Notification::updateNotifyDisplay() {
+ 				: TextWithEntities{ name };
+ 		};
+ 		auto title = options.hideNameAndPhoto
+-			? TextWithEntities{ u"Telegram Desktop"_q }
++			? TextWithEntities{ u"Rustogram"_q }
+ 			: reminder
+ 			? tr::lng_notification_reminder(tr::now, tr::marked)
+ 			: topicWithChat();
+diff --git a/Telegram/SourceFiles/window/window_main_menu.cpp b/Telegram/SourceFiles/window/window_main_menu.cpp
+index 16a5705..6b6179e 100644
+--- a/Telegram/SourceFiles/window/window_main_menu.cpp
++++ b/Telegram/SourceFiles/window/window_main_menu.cpp
+@@ -384,7 +384,7 @@ MainMenu::MainMenu(
+ 	parentResized();
+ 
+ 	_telegram->setMarkedText(tr::link(
+-		u"Telegram Desktop"_q,
++		u"Rustogram"_q,
+ 		u"https://desktop.telegram.org"_q));
+ 	_telegram->setLinksTrusted();
+ 	_version->setMarkedText(

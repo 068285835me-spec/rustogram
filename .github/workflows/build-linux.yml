@@ -1,0 +1,156 @@
+name: Linux Build
+
+on:
+  push:
+    branches: [ develop, main ]
+  workflow_dispatch:
+
+# Serialize builds on the same branch. New pushes (e.g. from
+# check-upstream bumping .upstream-tag) wait in queue rather than
+# cancelling a build that has already invested an hour in compilation.
+concurrency:
+  group: build-linux-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    name: Rocky Linux 8
+    runs-on: ubuntu-latest
+    timeout-minutes: 360   # hard cap: 6 hours
+
+    env:
+      IMAGE_TAG: tdesktop:centos_env
+
+    steps:
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@v10
+        with:
+          root-reserve-mb: 4096       # leave 4 GB on / for system
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'false'   # we need docker for centos_env
+          overprovision-lvm: 'true'
+
+      - name: Disk usage after maximize
+        run: |
+          echo "=== df ==="
+          df -h
+          echo "=== docker df ==="
+          docker system df 2>/dev/null || true
+
+      - name: Checkout MirBeer changes
+        uses: actions/checkout@v4
+        with:
+          path: mirbeer
+
+      - name: Read tdesktop tag
+        id: tag
+        run: echo "tag=$(cat mirbeer/.upstream-tag)" >> $GITHUB_OUTPUT
+
+      - name: Clone tdesktop
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: |
+            rm -rf tdesktop
+            git clone --depth=1 --recursive \
+              --branch ${{ steps.tag.outputs.tag }} \
+              https://github.com/telegramdesktop/tdesktop.git \
+              tdesktop
+
+      - name: Apply MirBeer patch
+        run: |
+          cp mirbeer/mirbeer_turn.cpp tdesktop/Telegram/SourceFiles/calls/
+          cp mirbeer/mirbeer_turn.h   tdesktop/Telegram/SourceFiles/calls/
+          cp mirbeer/apply_mirbeer.py tdesktop/
+
+          # Override Telegram icons with Rustogram icons
+          cp mirbeer/icons/art/* tdesktop/Telegram/Resources/art/
+
+          cd tdesktop
+          python3 apply_mirbeer.py
+
+      - name: First set up
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: |
+            sudo apt-get update
+            curl -sSL https://install.python-poetry.org | python3 -
+            export PATH="$HOME/.local/bin:$PATH"
+            cd tdesktop/Telegram/build/docker/centos_env
+            poetry install
+            DOCKERFILE=$(DEBUG= LTO= poetry run gen_dockerfile)
+            echo "$DOCKERFILE" > Dockerfile
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Libraries cache
+        id: cache-libs
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/.buildx-cache
+          key: ${{ runner.OS }}-libs-${{ hashFiles('tdesktop/Telegram/build/docker/centos_env/**') }}
+          restore-keys: ${{ runner.OS }}-libs-
+
+      - name: Cache status
+        run: |
+          if [ "${{ steps.cache-libs.outputs.cache-hit }}" = "true" ]; then
+            echo "Libraries cache: HIT (exact key match)"
+          elif [ -d "${{ runner.temp }}/.buildx-cache" ]; then
+            echo "Libraries cache: PARTIAL (restored from older key)"
+          else
+            echo "Libraries cache: MISS (cold build, this will be slow)"
+          fi
+
+      - name: Build libraries Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: tdesktop/Telegram/build/docker/centos_env
+          load: true
+          tags: ${{ env.IMAGE_TAG }}
+          cache-from: type=local,src=${{ runner.temp }}/.buildx-cache
+          cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache-new,mode=max
+
+      - name: Move cache
+        run: |
+          rm -rf ${{ runner.temp }}/.buildx-cache
+          mv ${{ runner.temp }}/.buildx-cache{-new,}
+
+      - name: Build Rustogram
+        run: |
+          docker run --rm \
+            -u $(id -u) \
+            -v $PWD/tdesktop:/usr/src/tdesktop \
+            ${{ env.IMAGE_TAG }} \
+            /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+            -D TDESKTOP_API_ID=${{ secrets.TELEGRAM_API_ID }} \
+            -D TDESKTOP_API_HASH=${{ secrets.TELEGRAM_API_HASH }} \
+            -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON
+
+      - name: Check build
+        run: |
+          filePath="tdesktop/out/Release/Telegram"
+          if test -f "$filePath"; then
+            echo "Build successful!"
+            size=$(stat -c %s "$filePath")
+            echo "Size: ${size} bytes"
+          else
+            echo "Build failed!"
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustogram-linux-x64
+          path: tdesktop/out/Release/Telegram
+          retention-days: 30
