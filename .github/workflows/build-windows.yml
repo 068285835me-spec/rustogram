@@ -199,7 +199,9 @@ jobs:
           set OUT=%TBUILD%\%REPO_NAME%\out\Debug
           mkdir artifact
           move %OUT%\Telegram.exe artifact\
-          move %OUT%\Updater.exe  artifact\
+          rem Updater.exe is only built when DESKTOP_APP_DISABLE_AUTOUPDATE=OFF;
+          rem keep the move optional so the job does not fail when it is absent.
+          if exist %OUT%\Updater.exe move %OUT%\Updater.exe artifact\
 
       - uses: actions/upload-artifact@v4
         if: env.UPLOAD_ARTIFACT == 'true'
