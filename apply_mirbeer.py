@@ -186,6 +186,47 @@ patch_lang_string(LANG, 'lng_sure_save_language',
     'Telegram will restart', 'Rustogram will restart',
     'lang: language change restart')
 
+# 12. lang_instance.cpp - rebrand cloud lang pack at runtime
+# Without this, only the English (built-in) lang.strings is patched.
+# Non-English UIs fetch a cloud lang pack from the Telegram servers
+# which overrides our values in memory via Instance::applyValue,
+# so the tray menu / "Update Telegram" button / etc. revert to the
+# Telegram brand on Russian, German, French and so on. Hook into
+# applyValue and replace the brand inside values for a whitelist of
+# keys that refer to OUR app (not the Telegram service).
+patch_file(
+    'Telegram/SourceFiles/lang/lang_instance.cpp',
+    'void Instance::applyValue(const QByteArray &key, const QByteArray &value) {\n'
+    '\t_nonDefaultValues[key] = value;\n'
+    '\tParseKeyValue(key, value, [&](ushort key, QString &&value) {',
+    'void Instance::applyValue(const QByteArray &key, const QByteArray &value) {\n'
+    '\t// MirBeer: rebrand "Telegram" -> "Rustogram" in cloud lang pack\n'
+    '\t// values for keys that refer to the app brand. Non-English locales\n'
+    '\t// download a cloud lang pack from the Telegram servers that\n'
+    '\t// overrides our Resources/langs/lang.strings patches in memory;\n'
+    '\t// this filter keeps the rebrand consistent across all languages.\n'
+    '\tstatic const char *const kMirBeerRebrandKeys[] = {\n'
+    '\t\t"lng_open_from_tray",\n'
+    '\t\t"lng_quit_from_tray",\n'
+    '\t\t"lng_tray_icon_text",\n'
+    '\t\t"lng_update_telegram",\n'
+    '\t\t"lng_sure_save_language",\n'
+    '\t\t"lng_error_start_minimized_passcoded",\n'
+    '\t\t"lng_proxy_unsupported",\n'
+    '\t};\n'
+    '\tauto rebranded = value;\n'
+    '\tfor (const auto k : kMirBeerRebrandKeys) {\n'
+    '\t\tif (key == k) {\n'
+    '\t\t\trebranded.replace("Telegram Desktop", "Rustogram");\n'
+    '\t\t\trebranded.replace("Telegram", "Rustogram");\n'
+    '\t\t\tbreak;\n'
+    '\t\t}\n'
+    '\t}\n'
+    '\t_nonDefaultValues[key] = rebranded;\n'
+    '\tParseKeyValue(key, rebranded, [&](ushort key, QString &&value) {',
+    'lang_instance.cpp: rebrand cloud lang pack at runtime'
+)
+
 
 print()
 print("=" * 70)

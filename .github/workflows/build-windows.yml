@@ -186,17 +186,16 @@ jobs:
           qt6 ^
           -D TDESKTOP_API_ID=${{ secrets.TELEGRAM_API_ID }} ^
           -D TDESKTOP_API_HASH=${{ secrets.TELEGRAM_API_HASH }} ^
-          -D CMAKE_CONFIGURATION_TYPES=Debug ^
-          -D CMAKE_MSVC_DEBUG_INFORMATION_FORMAT= ^
+          -D CMAKE_CONFIGURATION_TYPES=Release ^
           -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
           -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
 
-          cmake --build ..\out --config Debug --parallel 1
+          cmake --build ..\out --config Release --parallel 1
 
       - name: Move artifact
         if: env.UPLOAD_ARTIFACT == 'true'
         run: |
-          set OUT=%TBUILD%\%REPO_NAME%\out\Debug
+          set OUT=%TBUILD%\%REPO_NAME%\out\Release
           mkdir artifact
           move %OUT%\Telegram.exe artifact\
           rem Updater.exe is only built when DESKTOP_APP_DISABLE_AUTOUPDATE=OFF;
