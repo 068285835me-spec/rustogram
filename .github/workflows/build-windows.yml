@@ -173,11 +173,13 @@ jobs:
           GYP_MSVS_OVERRIDE_PATH: 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\'
           GYP_MSVS_VERSION: 2022
         run: |
-          rem We ship a Release tdesktop, so build third-party libs in
-          rem Release flavor only. (Previously this was `skip-release`,
-          rem which produced Debug-only libs and broke linker with
-          rem LNK1181 'libssl.lib' against the Release tdesktop build.)
-          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat skip-debug silent qt6
+          rem We ship a Release tdesktop, so we need Release-flavor
+          rem static libs (libssl.lib in openssl3\out\, etc.). The old
+          rem `skip-release` flag produced Debug-only libs and broke the
+          rem linker with LNK1181. There is no `skip-debug` in
+          rem prepare.py upstream, so we just let it build both Debug
+          rem and Release flavors of every dependency.
+          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat silent qt6
 
       - name: Free up some disk space
         shell: bash
