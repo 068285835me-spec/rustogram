@@ -94,11 +94,14 @@ jobs:
           SDK="$(grep "SDK version" $DOCPATH | sed -r 's/.*\*\*(.*)\*\* SDK version.*/\1/')"
           echo "SDK=$SDK" >> $GITHUB_ENV
 
-          sed -i '/CMAKE_${lang}_FLAGS_DEBUG_INIT/s/${_Zi}//' "$PROGRAMFILES"/CMake/share/cmake*/Modules/Platform/Windows-MSVC.cmake
-
           echo "$(sha256sum $TBUILD/$REPO_NAME/$PREPARE_PATH | awk '{ print $1 }')" >> CACHE_KEY.txt
           echo "$SDK" >> CACHE_KEY.txt
           echo "${{ steps.tag.outputs.tag }}" >> CACHE_KEY.txt
+          # Invalidate the old caches: they were built with `skip-release`
+          # so they only contain Debug-flavored static libs (libssl.lib in
+          # openssl3\out\Debug, etc.). The new Release tdesktop build needs
+          # Release libs, so we rebuild ThirdParty/Libraries from scratch.
+          echo "release-only" >> CACHE_KEY.txt
           echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
 
           git config --global user.email "build@rustogram.local"
@@ -170,7 +173,11 @@ jobs:
           GYP_MSVS_OVERRIDE_PATH: 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\'
           GYP_MSVS_VERSION: 2022
         run: |
-          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat skip-release silent qt6
+          rem We ship a Release tdesktop, so build third-party libs in
+          rem Release flavor only. (Previously this was `skip-release`,
+          rem which produced Debug-only libs and broke linker with
+          rem LNK1181 'libssl.lib' against the Release tdesktop build.)
+          %TBUILD%\%REPO_NAME%\Telegram\build\prepare\win.bat skip-debug silent qt6
 
       - name: Free up some disk space
         shell: bash
