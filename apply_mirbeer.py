@@ -6,6 +6,7 @@ critical to prevent shipping a binary branded "Rustogram" but missing
 the MirBeer TURN injection, branding, or other modifications.
 """
 
+import re
 import sys
 
 FAILED = []  # list of (description) tuples
@@ -27,6 +28,29 @@ def patch_file(path, old, new, description):
     else:
         print(f"  FAIL  {description}  (pattern not found in {path})")
         FAILED.append(description)
+
+
+def patch_regex(path, pattern, replacement, description,
+                flags=re.MULTILINE, expected_min=1):
+    """Apply a regex substitution and fail loudly if it matches less
+    than `expected_min` times. Useful when we have many similar lines
+    to drop or rewrite (e.g. all 'cmake --build . --config Debug')."""
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except FileNotFoundError:
+        print(f"  FAIL  {description}  (file not found: {path})")
+        FAILED.append(description)
+        return
+    new_content, count = re.subn(pattern, replacement, content, flags=flags)
+    if count < expected_min:
+        print(f"  FAIL  {description}  ({count} matches in {path}, "
+              f"expected >= {expected_min})")
+        FAILED.append(description)
+        return
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+    print(f"  OK    {description}  ({count} matches)")
 
 
 def patch_lang_string(path, key, find, replace, description):
@@ -185,6 +209,32 @@ patch_lang_string(LANG, 'lng_proxy_unsupported',
 patch_lang_string(LANG, 'lng_sure_save_language',
     'Telegram will restart', 'Rustogram will restart',
     'lang: language change restart')
+
+# ─── Build-system trims (Windows only) ───────────────────────────────
+# We ship Release tdesktop, not Debug. Upstream prepare/win.bat builds
+# every third-party library in BOTH Debug and Release flavors when
+# `skip-release` is not passed, which doubles disk usage and breaks
+# the Qt stage with C1085 "There is not enough space on the disk" on
+# the GitHub Actions runner. There is no upstream `skip-debug` flag,
+# so we drop the Debug build/install commands and force CONFIGURATIONS
+# to `-release` directly. Linux is unaffected — its libs are built in
+# the centos_env Docker image, not via prepare.py.
+
+patch_regex(
+    'Telegram/build/prepare/prepare.py',
+    r'CONFIGURATIONS=-debug-and-release',
+    'CONFIGURATIONS=-release',
+    'prepare.py: force Release-only CONFIGURATIONS',
+    expected_min=4,
+)
+
+patch_regex(
+    'Telegram/build/prepare/prepare.py',
+    r'^[ \t]*cmake --(?:build|install) \S+ --config Debug[ \t]*\n',
+    '',
+    'prepare.py: drop Debug-only cmake build/install commands',
+    expected_min=15,
+)
 
 # 12. lang_instance.cpp - rebrand cloud lang pack at runtime
 # Without this, only the English (built-in) lang.strings is patched.
